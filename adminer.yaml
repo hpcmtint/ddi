@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+
+  ddi-adminer:
+    image: adminer
+    container_name: ddi-adminer
+    hostname: ddi-adminer
+    ports:
+      - "8088:8080"
+    volumes:
+      - /srv/ddi/adminer/schema/adminer.css:/var/www/html/adminer.css
+    environment:
+      TZ: Europe/London
+    networks:
+      ddi_bridge_net:
+        ipv4_address: 192.168.57.12
+      pdns-net:
+        ipv4_address: 172.22.0.101
+    restart: always
+
+networks:
+  ddi_bridge_net:
+    external: true
+  pdns-net:
+    external: true
