@@ -1,0 +1,181 @@
+version: '3.8'
+
+services:
+  keadhcp4-server:
+    image: docker.io/library/kea-proxy
+    container_name: keadhcp
+    hostname: keadhcp
+    ports:
+      - 8080:8080
+      - 8081:8081/udp
+      - 9080:9000
+      - 67:67/udp
+    environment:
+      TZ: Europe/London
+    volumes:
+      - /srv/ddi/kea/configs:/etc/kea
+      - /srv/ddi/kea/configs/supervisor:/etc/supervisor/
+      - /srv/ddi/kea/logs:/var/lib/kea
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - keadhcp-mariadb
+    restart: unless-stopped
+    networks:
+      ddi_bridge_net:
+        ipv4_address: 192.168.57.2
+      pdns-net:
+        ipv4_address: 172.22.0.9
+
+  keadhcp-mariadb:
+    image: mariadb:latest
+    container_name: keadhcp-mariadb
+    hostname: keadhcp-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: Q6WZFax1-YB7g-tYh2AXqF
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+      MYSQL_USER: kea
+      MYSQL_PASSWORD: kea
+      MYSQL_DATABASE: kea
+      TZ: Europe/London
+    ports:
+      - 3306:3306
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    volumes:
+      - /srv/ddi/kea/db:/var/lib/mysql:rw
+      - /srv/ddi/kea/initdb:/docker-entrypoint-initdb.d:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      ddi_bridge_net:
+        ipv4_address: 192.168.57.3
+      pdns-net:
+        ipv4_address: 172.22.0.3
+
+  phpipam-web:
+    image: phpipam/phpipam-www:latest
+    container_name: phpipam-web
+    hostname: phpipam-web
+    ports:
+
+      - "8800:80"    # HTTP for web UI
+      - "8843:443"   # HTTPS for web UI
+      - "8801:8443"  # HTTPS for API
+    environment:
+      TZ: Europe/London
+      IPAM_DATABASE_HOST: phpipam-mariadb
+      IPAM_DATABASE_PASS: Q6WZFax1-YB7g-tYh2AXqF
+      IPAM_DATABASE_WEBHOST: '%'
+    restart: unless-stopped
+    volumes:
+      - phpipam-logo:/phpipam/css/images/logo
+      - phpipam-ca:/usr/local/share/ca-certificates:ro
+      - /srv/ddi/phpipam/certs:/certs:ro
+    depends_on:
+      - phpipam-mariadb
+    networks:
+      ddi_bridge_net:
+        ipv4_address: 192.168.57.4
+      pdns-net:
+        ipv4_address: 172.22.0.8
+
+  phpipam-cron:
+    image: phpipam/phpipam-cron:latest
+    container_name: phpipam-cron
+    hostname: phpipam-cron
+    environment:
+      TZ: Europe/London
+      IPAM_DATABASE_HOST: phpipam-mariadb
+      IPAM_DATABASE_PASS: Q6WZFax1-YB7g-tYh2AXqF
+      SCAN_INTERVAL: 1h
+    restart: unless-stopped
+    volumes:
+      - phpipam-ca:/usr/local/share/ca-certificates:ro
+    depends_on:
+      - phpipam-mariadb
+    networks:
+      ddi_bridge_net:
+        ipv4_address: 192.168.57.5
+      pdns-net:
+        ipv4_address: 172.22.0.7
+
+  phpipam-mariadb:
+    image: mariadb:latest
+    container_name: phpipam-mariadb
+    hostname: phpipam-mariadb
+    environment:
+      TZ: Europe/London
+      MYSQL_ROOT_PASSWORD: Q6WZFax1-YB7g-tYh2AXqF
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+      MYSQL_PASSWORD: Q6WZFax1-YB7g-tYh2AXqF
+    ports:
+      - 5310:3306
+    restart: always
+    volumes:
+      - /srv/ddi/phpipam:/var/lib/mysql
+    networks:
+      ddi_bridge_net:
+        ipv4_address: 192.168.57.6
+      pdns-net:
+        ipv4_address: 172.22.0.4
+    healthcheck:
+      interval: 30s
+      retries: 3
+      test:
+        [ "CMD", "healthcheck.sh", "--su-mysql", "--connect", "--innodb_initialized" ]
+      timeout: 30s
+
+  ddi-jumpbox:
+    image: ddi-ubuntu-jumpbox
+    container_name: ddi-jumpbox
+    hostname: ddi-jumpbox
+    ports:
+      - "666:22"
+    volumes:
+      - /srv/ddi/jumpbox/ssh/ssh_config:/etc/ssh/ssh_config
+      - /srv/ddi/jumpbox/ssh/sshd_config:/etc/ssh/sshd_config
+      - /srv/ddi/jumpbox/authorized_keys:/root/.ssh/authorized_keys
+      - /srv/ddi/jumpbox/user_home:/home
+      - /srv/ddi/scripts:/root/scripts
+    environment:
+      TZ: Europe/London
+    stdin_open: true
+    tty: true
+    networks:
+      ddi_bridge_net:
+        ipv4_address: 192.168.57.7
+      pdns-net:
+        ipv4_address: 172.22.0.5
+    restart: always
+
+  ddi-console:
+    image: ddi-comsole:latest
+    container_name: ddi-console
+    hostname: ddi
+    environment:
+      TZ: Europe/London
+      HTTP_PROXY: http://172.30.115.1:3128
+      HTTPS_PROXY: http://172.30.115.1:3128
+      NO_PROXY: "*.globe.awe.co.uk,localhost,127.0.0.1::1,172.0.0.0/12,192.0.0.0/16,10.0.0.0/8"
+    ports:
+      - "5000:5000"
+      - "48080:8080"
+    volumes:
+      - /srv/ddi/dhcpgui/data:/data
+      - /srv/ddi/dhcpgui/app:/app
+    networks:
+      ddi_bridge_net:
+        ipv4_address: 192.168.57.8
+      pdns-net:
+        ipv4_address: 172.22.0.2
+    restart: always
+
+volumes:
+#  phpipam-db-data:
+  phpipam-logo:
+  phpipam-ca:
+
+networks:
+  ddi_bridge_net:
+    external: true
+  pdns-net:
+    external: true
