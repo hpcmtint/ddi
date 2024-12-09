@@ -1,0 +1,54 @@
+version: '3.8'
+services:
+  portainer:
+    image: portainer/portainer-ee
+    container_name: portainer
+    hostname: 'portainer'
+    env_file:
+      - .env
+    ports:
+      - ${PORTAINER_PORT}:9000
+    expose:
+      - ${PORTAINER_PORT} 
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /srv/db/portainer_data:/data
+    restart: unless-stopped
+    command: -H tcp://tasks.agent:9001
+    environment:
+      - AUTH_METHOD=keycloak
+    networks:
+        admin_net:
+
+  agent:
+    image: portainer/agent
+    container_name: portainer-agent
+    hostname: 'portainer-agent'
+    restart: unless-stopped 
+    environment:
+      # REQUIRED: Should be equal to the service name prefixed by "tasks." when
+      # deployed inside an overlay network
+      AGENT_CLUSTER_ADDR: tasks.agent
+      PORTAINER_AGENT_PORT: 9001
+    ports:
+      - 9001:9001/tcp
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+    networks:
+        admin_net:
+
+volumes:
+  portainer_data:
+
+networks:
+  admin_net:
+    driver: bridge
+    name: admin_net
+    ipam:
+      config:
+        - subnet: ${NETWORK_SUBNET}
